@@ -273,6 +273,7 @@
 
       for (const todo of items) {
         const li = document.createElement("li");
+        li.dataset.todoId = todo.id;
 
         const checkbox = document.createElement("div");
         checkbox.className = "checkbox" + (todo.done ? " done" : "");
@@ -283,6 +284,8 @@
         const text = document.createElement("span");
         text.className = "todo-text" + (todo.done ? " done" : "");
         text.textContent = todo.text;
+        text.title = "Click to edit";
+        text.addEventListener("click", () => startEditing(todo.id));
 
         const del = document.createElement("button");
         del.className = "delete-btn";
