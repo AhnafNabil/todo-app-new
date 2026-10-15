@@ -14,6 +14,9 @@
       --accent-hover: #0062cc;
       --border: #e5e5ea;
       --done: #8e8e93;
+      --overdue: #ff3b30;
+      --due-today: #ff9500;
+      --due-soon: #8e8e93;
     }
 
     * { box-sizing: border-box; }
@@ -152,6 +155,28 @@
 
     .delete-btn:hover { background: #ffe5e5; color: #ff3b30; }
 
+    .due-date {
+      font: inherit;
+      font-size: 12px;
+      color: var(--muted);
+      padding: 4px 6px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: white;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s;
+    }
+
+    .due-date:hover { border-color: var(--accent); }
+    .due-date:focus { outline: none; border-color: var(--accent); }
+    .due-date::-webkit-calendar-picker-indicator { opacity: 0.5; cursor: pointer; }
+
+    .due-date.overdue { color: var(--overdue); border-color: var(--overdue); }
+    .due-date.today   { color: var(--due-today); border-color: var(--due-today); }
+    .due-date.soon    { color: var(--due-soon); }
+
+    .due-date.dim { opacity: 0.55; }
+
     .empty {
       text-align: center;
       padding: 32px 0;
@@ -226,7 +251,7 @@
       }
     }
 
-    function addTodo(text) {
+    function addTodo(text, dueDate) {
       const trimmed = text.trim();
       if (!trimmed) return;
       state.todos.push({
@@ -234,9 +259,55 @@
         text: trimmed,
         done: false,
         createdAt: Date.now(),
+        dueDate: dueDate || null,
       });
       saveTodos();
       render();
+    }
+
+    function setDueDate(id, iso) {
+      const todo = state.todos.find((t) => t.id === id);
+      if (!todo) return;
+      todo.dueDate = iso || null;
+      saveTodos();
+      render();
+    }
+
+    function todayISO() {
+      const d = new Date();
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      return `${y}-${m}-${day}`;
+    }
+
+    function daysUntil(iso) {
+      if (!iso) return null;
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const target = new Date(iso + "T00:00:00");
+      if (Number.isNaN(target.getTime())) return null;
+      return Math.round((target - today) / 86400000);
+    }
+
+    function dueClass(iso) {
+      const days = daysUntil(iso);
+      if (days === null) return "";
+      if (days < 0) return "overdue";
+      if (days === 0) return "today";
+      if (days <= 3) return "soon";
+      return "";
+    }
+
+    function scheduleMidnightRefresh() {
+      const now = new Date();
+      const next = new Date(now);
+      next.setHours(24, 0, 5, 0);
+      const ms = next - now;
+      setTimeout(() => {
+        render();
+        scheduleMidnightRefresh();
+      }, ms);
     }
 
     function toggleTodo(id) {
@@ -271,6 +342,22 @@
       const items = visibleTodos();
       listEl.innerHTML = "";
 
+      // Sort: overdue -> today -> soon (1-3d) -> no date -> later.
+      // Within a bucket, newer createdAt first.
+      const bucket = (t) => {
+        const days = daysUntil(t.dueDate);
+        if (days === null) return 3;
+        if (days < 0) return 0;
+        if (days === 0) return 1;
+        if (days <= 3) return 2;
+        return 4;
+      };
+      items.sort((a, b) => {
+        const ba = bucket(a), bb = bucket(b);
+        if (ba !== bb) return ba - bb;
+        return b.createdAt - a.createdAt;
+      });
+
       for (const todo of items) {
         const li = document.createElement("li");
         li.dataset.todoId = todo.id;
@@ -287,13 +374,20 @@
         text.title = "Click to edit";
         text.addEventListener("click", () => startEditing(todo.id));
 
+        const due = document.createElement("input");
+        due.type = "date";
+        due.className = "due-date " + dueClass(todo.dueDate) + (todo.done ? " dim" : "");
+        if (todo.dueDate) due.value = todo.dueDate;
+        due.setAttribute("aria-label", "Due date");
+        due.addEventListener("change", () => setDueDate(todo.id, due.value || null));
+
         const del = document.createElement("button");
         del.className = "delete-btn";
         del.setAttribute("aria-label", "Delete todo");
         del.textContent = "×";
         del.addEventListener("click", () => deleteTodo(todo.id));
 
-        li.append(checkbox, text, del);
+        li.append(checkbox, text, due, del);
         listEl.appendChild(li);
       }
 
@@ -320,6 +414,7 @@
     });
 
     render();
+    scheduleMidnightRefresh();
   </script>
 </body>
 </html>
